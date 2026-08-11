@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: aichatwithyt-server
+    env: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-flash-latest
+      - key: GEMINI_EMBEDDING_MODEL
+        value: gemini-embedding-001
+      - key: DB_URL
+        sync: false
+      - key: BRIGHTDATA_API_KEY
+        sync: false
+      - key: BRIGHTDATA_DATASET_ID
+        value: gd_lk56epmy2i5g7lzu0k
+      - key: API_URL
+        sync: false
+      - key: CLIENT_URL
+        sync: false
