@@ -4,7 +4,10 @@ import { ChatGoogle } from "@langchain/google/node";
 import { tool } from "@langchain/core/tools";
 //tool is a function provided by LangChain that ai agent is allowed to use if we wrap a normal js func around it .
 import { MemorySaver } from "@langchain/langgraph";
-//memorySaver is a class provided by LangGraph that allows you to persist the state of your agent's memory across invocations. It stores the agent's state/conversation in memory so that different calls belonging to the same thread can maintain context.
+// A checkpointer saves snapshots of the state of an AI workflow at different points so that the state can be retrieved or continued later.
+// MemorySaver is the tool that tells the framework to store these checkpoints directly in your system’s volatile RAM
+// it allows different requests belonging to the same thread_id to maintain conversational continuity.
+
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 //langraph  is a framework to implement ai workflow. It allows you to create agents that can use tools and memory to perform complex tasks.
 //means you're importing a prebuilt agent implementation provided by LangGraph.Instead of manually constructing every node and edge of the agent graph yoursel
@@ -141,7 +144,10 @@ The tool returns a snapshot id for the scraping job.
     }),
   }
 );
-
+// The retrieve tool performs the retrieval step of the RAG pipeline.
+// It first identifies the video ID and then performs a similarity search against the vector store using the user's query.
+// It retrieves the top three relevant transcript chunks for that specific video and returns their text to the agent.
+// The agent can then use those retrieved chunks as context to generate a grounded answer.
 const retrieveTool = tool(
   async ({ query, url, video_id }) => {
     const resolvedVideoId = normalizeVideoIdentifier({ url, video_id });
@@ -153,7 +159,7 @@ const retrieveTool = tool(
     const retrievedDocs = await vectorStore.similaritySearch(query, 3, {
       video_id: resolvedVideoId,
     });
-
+//retrievedDocs is an array of Document objects, each representing a chunk of the transcript that is semantically similar to the user's query.
     if (retrievedDocs.length === 0) {
       return "No relevant transcript chunks found for this video yet.";
     }
@@ -175,12 +181,16 @@ Pass either the full YouTube url or the video_id.
   }
 );
 
+//This tool searches the vector store across the indexed video collection rather than restricting the search to one particular video.
+// It retrieves the most semantically similar transcript chunks for the user's query, extracts their video_id values, removes duplicates using a Set, and returns the unique video IDs.
+// This allows the agent to identify videos that are related to the user's query.
 
 const retrieveSimilarVideosTool = tool(
   async ({ query }) => {
     const retrievedDocs = await vectorStore.similaritySearch(query, 30);
     const ids = [...new Set(retrievedDocs.map((doc) => doc.metadata.video_id))];
-
+//new set removes duplicate video IDs from the retrieved documents, ensuring that the final list of video IDs returned to the agent is unique.
+//ids is an array of unique video IDs that are most semantically similar to the user's query across the entire indexed video collection.
     return ids.length > 0
       ? ids.join("\n")
       : "No similar videos found in the vector store.";
@@ -212,6 +222,7 @@ const llm = new ChatGoogle({
   temperature: 0.2,
 });
 //checkpointer stores the state of the graph at different points so it can be recovered later.
+//checkpoint is cnapshot of the currect start of the ai workflow. it allows you to save the state of the agent's memory and conversation context so that it can be restored later. This is useful for maintaining continuity across multiple interactions with the agent.
 const checkpointer = new MemorySaver();
 
 // This is the factory function that creates your ReAct agent.
@@ -230,7 +241,15 @@ export const agent = createReactAgent({
     retrieveTool,
     retrieveSimilarVideosTool,
   ],
+
+  //Whenever you run this agent, use this checkpointer to save and restore its state
+  //The thread_id provided during agent.invoke() acts as the identifier for a conversation, allowing LangGraph to retrieve the corresponding state on subsequent requests."
   checkpointer,
+
+
+  //An LLM can reason, but without clear instructions its behavior can be less predictable.
+//The system prompt provides constraints and establishes the intended workflow.
+//The prompt defines the agent's behavior and provides instructions about how it should use the available tools.
   prompt: `
 You are an AI assistant that answers questions about YouTube videos.
 

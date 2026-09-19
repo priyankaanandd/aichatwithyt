@@ -8,6 +8,7 @@ import express from "express";
 //without express, we would have to manually handle HTTP requests and responses, which can be cumbersome and error-prone. Express provides a clean and simple API for defining routes, handling requests, and sending responses.
 
 import { ChatGoogle } from "@langchain/google/node";
+//LangChain provides common abstractions around these models.So instead of your application having to understand every provider's API, you can work with LangChain interfaces.
 
 //@ means scope
 //@langchain/google means package owned by langchain & that package prov langchain integration with google services
@@ -51,7 +52,7 @@ const llm = new ChatGoogle({
   model: resolveGeminiModel(),
   temperature: 0.2,
 });
-//llm is client/var/obj of class chatgoogle that is resp for intern with actual google llm on goole infra.
+//llm is client/var/obj of class chatgoogle that is resp for interacting  with actual google llm on goole infra.
 
 
 //This is a regular expression, commonly called a regex.Regex is a pattern used to search/validate/extract text.
@@ -59,15 +60,15 @@ const llm = new ChatGoogle({
 const extractYoutubeUrl = (text) => {
   return text.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?[^ \n]+|youtu\.be\/[^ \n]+)/)?.[0];
 };
-//text.match(regex)doesn't directly return the string.It returns a match result array when a match exists. so [0] to get first element 
-//text.match(regex)doesn't directly return the string.It returns a match result array when a match exists.
+//text.match(regex)doesn't directly return the string.It returns a match result array when a match exists. so [0] to get first element of that array that is the url
 const extractVideoId = (url) => {
   const parsedUrl = new URL(url);
-  //URL is a built-in JavaScript class that provides a convenient way to parse and manipulate URLs. It allows you to extract various components of a URL, such as the hostname, pathname, search parameters, etc.
+//URL is a built-in JavaScript class that provides a convenient way to parse and manipulate URLs. It allows you to extract various components of a URL, such as the hostname, pathname, search parameters, etc.
 //protocol  → https:
 //hostname  → www.youtube.com
 //pathname  → /watch
 //searchparams   → ?v=ABC123
+//slice(1) means start from index 1 so skip the /
   if (parsedUrl.hostname.includes("youtu.be")) {
     return parsedUrl.pathname.slice(1);
   }
@@ -81,6 +82,7 @@ const startIndexingVideo = (url, videoId) => {
     return indexingJobs.get(videoId);
   }
 //An async function always returns a Promise.
+//this job is a promise 
 //A Promise is basically a JavaScript object representing:"I don't have the final result yet, but I promise I'll give you the result later."
   const job = (async () => {
     //await pauses the execution of this async function until the Promise settles.it does not freeze the entire Node.js process.
@@ -91,31 +93,41 @@ const startIndexingVideo = (url, videoId) => {
     }
 
     await waitForBrightDataSnapshot(snapshotId);
+    //Once scraping is triggered, 
+    // Bright Data may need time to finish.
     const videos = await downloadBrightDataSnapshot(snapshotId);
-//videos is an array containg multiple vdo scraped data and the downloadbrightdata return is store in the videos array
+//videos is an array containg multiple vdo scraped data and the downloadbrightdata return is stored in the videos array
     if (!Array.isArray(videos) || videos.length === 0) {
       throw new Error("Bright Data returned no video data.");
     }
+
 //addYTVideoToVectorStore() is asynchronous. it returns a Promise that resolves when the video is successfully added to the vector store. By using Promise.all(), we can wait for all these Promises to resolve before proceeding. This ensures that all videos are indexed before the job is considered complete.
     await Promise.all(videos.map((video) => addYTVideoToVectorStore(video)));
+    
   })().finally(() => {
+    //.finally() runs only after the Promise  upar wale func ka  is settled.
+// “Settled” means the Promise is no longer pending. It has reached one of these states:
+// fulfilled: the async function completed successfully
+// rejected: the async function threw an error
     if (shouldUseLocalBrightDataPolling()) {
       indexingJobs.delete(videoId);
       return;
     }
 
     setTimeout(() => indexingJobs.delete(videoId), 5 * 60 * 1000);
+    //delete vdo id after 5 min if no polling bcoz wehbook may take time to get the data 
     //.finally()Run this code when the Promise finishes, whether it succeeds or fails.
     //success or failure in promise just remove the job from the map bcoz even if it failed it is not active 
   });
 
   indexingJobs.set(videoId, job);
   job.catch((error) => console.error("Background indexing failed:", error));
-  return job;
+  return job;// gives back the Promise created by this async job
 };
 
 const answerFromTranscript = async (query, videoId) => {
   //terminology, retrieved pieces of text are commonly represented as Document objects.
+  //return top 4 chunks/doc object  similar to query 
   //docs is array of Document objects
   const docs = await vectorStore.similaritySearch(query, 4, {
     video_id: videoId,
@@ -187,7 +199,7 @@ app.post("/generate", async (req, res) => {
       }
 
       return res.send(await answerFromTranscript(query, videoId));
-    }
+   }
 //if user sends a query without a youtube url, we check if the thread has an active video id associated with it. If it does, we check if that video is still being indexed or if it is already in the vector store. If it's still being indexed, we inform the user to ask again later. If it's already indexed, we answer the user's query based on the transcript of that video. If there's no active video id for the thread, we proceed to invoke the agent to handle the query.
 //we reach here if not yt url in query
     const activeVideoId = threadVideoIds.get(threadKey);
@@ -233,8 +245,7 @@ app.post("/generate", async (req, res) => {
     });
   }
 });
-//A webhook is basically:an HTTP endpoint that another service calls when an event happens.
-
+//A webhook is an HTTP endpoint that another service calls to notify our application when an event happens.
 //your frontend call backend is diff and another service calls backend 
 //Your server doesn't want to constantly keep asking:
 // Are you finished?
